@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/errorHandler';
 import healthRouter from './routes/health';
 import authRouter from './routes/auth';
 import projectsRouter from './routes/projects';
+import { projectFileRouter, fileRouter } from './routes/files';
 
 export function createApp(): Application {
   const app = express();
@@ -35,6 +36,8 @@ export function createApp(): Application {
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/projects', projectsRouter);
+  app.use('/api/projects/:projectId/files', projectFileRouter);
+  app.use('/api/files', fileRouter);
 
   // ── Error handler — must be last ───────────────────────────────────────────
 

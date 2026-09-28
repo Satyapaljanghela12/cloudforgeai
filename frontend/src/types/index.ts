@@ -20,6 +20,17 @@ export interface Project {
   updatedAt: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  projectId: string;
+  path: string;
+  name: string;
+  content: string;
+  isDirectory: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const SUPPORTED_LANGUAGES = [
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },

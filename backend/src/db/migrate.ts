@@ -67,6 +67,26 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS projects_user_id_idx ON projects (user_id);
     `,
   },
+  {
+    id: '003_create_project_files',
+    sql: `
+      CREATE TABLE IF NOT EXISTS project_files (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        path        TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        content     TEXT NOT NULL DEFAULT '',
+        is_directory BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        -- A project cannot have two files at the same path
+        UNIQUE (project_id, path)
+      );
+
+      CREATE INDEX IF NOT EXISTS project_files_project_id_idx ON project_files (project_id);
+    `,
+  },
 ];
 
 // ── Migration runner ──────────────────────────────────────────────────────────
