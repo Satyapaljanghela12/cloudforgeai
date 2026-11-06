@@ -12,4 +12,8 @@ router.post('/logout', authController.logout);
 // Protected — requires valid JWT cookie
 router.get('/me', authenticate, authController.me);
 
+// Returns the raw token so the WebSocket client can use it
+// (Browser WS API can't send custom headers, so token goes in first message)
+router.get('/token', authenticate, authController.getToken);
+
 export default router;

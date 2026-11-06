@@ -8,6 +8,8 @@ import healthRouter from './routes/health';
 import authRouter from './routes/auth';
 import projectsRouter from './routes/projects';
 import { projectFileRouter, fileRouter } from './routes/files';
+import executionRouter from './routes/execution';
+import aiRouter from './routes/ai';
 
 export function createApp(): Application {
   const app = express();
@@ -38,6 +40,8 @@ export function createApp(): Application {
   app.use('/api/projects', projectsRouter);
   app.use('/api/projects/:projectId/files', projectFileRouter);
   app.use('/api/files', fileRouter);
+  app.use('/api/execution', executionRouter);
+  app.use('/api/projects/:id/ai', aiRouter);
 
   // ── Error handler — must be last ───────────────────────────────────────────
 

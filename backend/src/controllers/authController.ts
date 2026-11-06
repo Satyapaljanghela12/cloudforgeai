@@ -81,4 +81,12 @@ export const authController = {
     // req.user is guaranteed by the authenticate middleware
     res.status(200).json({ success: true, data: { user: req.user } });
   },
+
+  async getToken(req: Request, res: Response): Promise<void> {
+    // Return the raw JWT from the cookie so the WebSocket client can use it.
+    // The cookie is httpOnly so JS can't read it directly — this endpoint
+    // bridges that gap specifically for the WebSocket auth flow.
+    const token = req.cookies?.token as string;
+    res.status(200).json({ success: true, data: { token } });
+  },
 };

@@ -87,6 +87,70 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS project_files_project_id_idx ON project_files (project_id);
     `,
   },
+  {
+    id: '004_create_ai_conversations',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_conversations (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS ai_conversations_project_id_idx
+        ON ai_conversations (project_id);
+
+      CREATE TABLE IF NOT EXISTS ai_messages (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+        role            TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool')),
+        content         TEXT NOT NULL DEFAULT '',
+        tool_calls      JSONB,
+        tool_call_id    TEXT,
+        tool_name       TEXT,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS ai_messages_conversation_id_idx
+        ON ai_messages (conversation_id);
+    `,
+  },
+  {
+    id: '005_create_code_embeddings',
+    sql: `
+      -- Enable pgvector extension (pre-installed on Supabase)
+      CREATE EXTENSION IF NOT EXISTS vector;
+
+      -- Stores chunked file content with its vector embedding.
+      -- Each row = one chunk of a file (e.g. a function, a class, or a paragraph).
+      -- The embedding column holds a 1536-dim vector (text-embedding-3-small).
+      CREATE TABLE IF NOT EXISTS code_embeddings (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        file_id     UUID NOT NULL REFERENCES project_files(id) ON DELETE CASCADE,
+        file_path   TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content     TEXT NOT NULL,
+        -- 1536 dimensions for text-embedding-3-small
+        -- 3072 dimensions for text-embedding-3-large
+        embedding   vector(1536),
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        UNIQUE (file_id, chunk_index)
+      );
+
+      -- IVFFlat index for fast approximate nearest-neighbour search.
+      -- lists=100 is a good default for up to ~1M vectors.
+      -- Use cosine distance (most reliable for text embeddings).
+      CREATE INDEX IF NOT EXISTS code_embeddings_vector_idx
+        ON code_embeddings
+        USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100);
+
+      CREATE INDEX IF NOT EXISTS code_embeddings_project_id_idx
+        ON code_embeddings (project_id);
+    `,
+  },
 ];
 
 // ── Migration runner ──────────────────────────────────────────────────────────

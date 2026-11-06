@@ -5,31 +5,37 @@ import { logger } from '../utils/logger';
 /**
  * PostgreSQL connection pool.
  *
- * Why a pool instead of a single connection?
- * A pool maintains multiple open connections and hands them out to
- * concurrent requests. Without pooling, each request would open and close
- * a connection (~50ms overhead) and you'd hit PostgreSQL's connection limit
- * under any real load.
- *
- * Why a singleton?
- * The pool is expensive to create and should live for the lifetime of the
- * process. Importing this module multiple times returns the same instance
- * (Node.js module caching).
+ * Supabase SSL:
+ * We parse the DATABASE_URL manually and pass ssl as a separate option.
+ * This prevents pg-connection-string from overriding rejectUnauthorized
+ * when it parses the URL — which was causing SELF_SIGNED_CERT_IN_CHAIN.
  *
  * Interview point: PostgreSQL has a max_connections setting (default 100).
- * In production with multiple Node.js processes, you'd use PgBouncer as a
- * connection pooler in front of PostgreSQL to prevent connection exhaustion.
+ * Supabase free tier allows ~60 connections. We keep the pool small (5)
+ * so multiple dev processes don't exhaust the limit.
  */
-export const pool = new Pool({
-  connectionString: config.databaseUrl,
-  // Max simultaneous connections this pool will open.
-  // Keep this conservative — each connection consumes PostgreSQL resources.
-  max: 10,
-  // How long to wait for a connection from the pool before throwing (ms)
-  connectionTimeoutMillis: 5000,
-  // How long a connection can sit idle before being closed (ms)
-  idleTimeoutMillis: 30000,
-});
+
+// Parse the DATABASE_URL manually so we can inject ssl separately
+function buildPoolConfig() {
+  const url = new URL(config.databaseUrl);
+
+  return {
+    host: url.hostname,
+    port: parseInt(url.port || '5432', 10),
+    database: url.pathname.replace(/^\//, ''),
+    user: url.username,
+    password: url.password,
+    max: 5,
+    connectionTimeoutMillis: 15000,
+    idleTimeoutMillis: 30000,
+    // Explicitly set ssl here — not via the URL — so pg respects rejectUnauthorized
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  };
+}
+
+export const pool = new Pool(buildPoolConfig());
 
 // Log pool errors so they're never silently swallowed
 pool.on('error', (err) => {

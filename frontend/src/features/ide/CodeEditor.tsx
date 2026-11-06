@@ -44,7 +44,7 @@ export default function CodeEditor({ activeTab, onChange, onSaveRef }: Props) {
 
   if (!activeTab) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gray-950">
+      <div className="h-full w-full flex items-center justify-center bg-gray-950">
         <div className="text-center space-y-2">
           <p className="text-gray-600 text-sm">No file open</p>
           <p className="text-gray-700 text-xs">
@@ -58,7 +58,7 @@ export default function CodeEditor({ activeTab, onChange, onSaveRef }: Props) {
   const language = getMonacoLanguage(activeTab.file.name);
 
   return (
-    <div className="flex-1 overflow-hidden">
+    <div className="h-full w-full overflow-hidden">
       <Editor
         key={activeTab.file.id} // Remount when switching files to avoid stale state
         height="100%"
