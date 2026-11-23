@@ -61,4 +61,30 @@ export const config = {
   // OpenRouter proxies OpenAI embeddings: use openai/text-embedding-3-small
   embeddingModel: optionalEnv('EMBEDDING_MODEL', 'openai/text-embedding-3-small'),
   embeddingDimensions: parseInt(optionalEnv('EMBEDDING_DIMENSIONS', '1536'), 10),
+
+  // ── GitHub OAuth ──────────────────────────────────────────────────────────
+  //
+  // Create a GitHub OAuth App at:
+  // https://github.com/settings/developers → OAuth Apps → New OAuth App
+  //
+  // Homepage URL:        http://localhost:5173
+  // Authorization callback URL: http://localhost:3001/api/github/callback
+  //
+  // Why store the token server-side?
+  // GitHub access tokens must never be sent to the browser — they give
+  // full access to the user's GitHub account. We store them encrypted
+  // in the database and use them server-side only.
+  githubClientId: optionalEnv('GITHUB_CLIENT_ID', ''),
+  githubClientSecret: optionalEnv('GITHUB_CLIENT_SECRET', ''),
+  githubCallbackUrl: optionalEnv('GITHUB_CALLBACK_URL', 'http://localhost:3001/api/github/callback'),
+
+  // ── Deployment ────────────────────────────────────────────────────────────
+  //
+  // DEPLOY_HOST: The domain used for generated deployment URLs.
+  // Dev: localhost → URLs are http://localhost:4001
+  // Prod: cloudforge.app → URLs are https://project-abc.cloudforge.app
+  deployHost: optionalEnv('DEPLOY_HOST', 'localhost'),
+  // Port range for deployed containers (4000–4999)
+  deployPortMin: parseInt(optionalEnv('DEPLOY_PORT_MIN', '4000'), 10),
+  deployPortMax: parseInt(optionalEnv('DEPLOY_PORT_MAX', '4999'), 10),
 } as const;

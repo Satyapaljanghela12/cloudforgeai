@@ -19,8 +19,8 @@ export type ExecutionStatus = 'idle' | 'running' | 'finished' | 'error';
 type MessageHandler = (msg: ExecutionMessage) => void;
 type StatusHandler = (status: ExecutionStatus) => void;
 
-// Use relative WebSocket URL so it works on any host/port
-const WS_URL = `ws://${window.location.hostname}:3001/ws/execution`;
+// Route through Vite dev server proxy (ws://localhost:5173/ws/execution → ws://localhost:3001/ws/execution)
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/execution`;
 
 export class ExecutionClient {
   private ws: WebSocket | null = null;

@@ -19,6 +19,8 @@ import NewFileDialog from '../features/ide/dialogs/NewFileDialog';
 import RenameDialog from '../features/ide/dialogs/RenameDialog';
 import DeleteConfirmDialog from '../features/ide/dialogs/DeleteConfirmDialog';
 
+import GitPanel from '../features/ide/GitPanel';
+
 type Dialog =
   | { type: 'newFile'; parentPath?: string }
   | { type: 'newFolder'; parentPath?: string }
@@ -26,7 +28,7 @@ type Dialog =
   | { type: 'delete'; file: ProjectFile }
   | null;
 
-type SidePanel = 'explorer' | null;
+type SidePanel = 'explorer' | 'git' | null;
 
 export default function IDEPage() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -305,8 +307,8 @@ export default function IDEPage() {
 
           <ActivityIcon
             title="Source Control"
-            active={false}
-            onClick={() => {}}
+            active={sidePanel === 'git'}
+            onClick={() => setSidePanel(p => p === 'git' ? null : 'git')}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 5C7 3.343 8.343 2 10 2s3 1.343 3 3-1.343 3-3 3a2.99 2.99 0 0 1-2.134-.887L5.5 8.48A3.494 3.494 0 0 1 6 10a3.494 3.494 0 0 1-.5 1.52l2.366 1.367A2.99 2.99 0 0 1 10 12c1.657 0 3 1.343 3 3s-1.343 3-3 3-3-1.343-3-3c0-.601.177-1.16.482-1.629L5.116 12.01A3.994 3.994 0 0 1 3 10a3.994 3.994 0 0 1 2.116-3.01L7.482 5.63A2.982 2.982 0 0 1 7 5zm3 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm7-7a4 4 0 0 1-4 4v-2a2 2 0 1 0 0-4v-2a4 4 0 0 1 4 4z"/>
@@ -328,6 +330,11 @@ export default function IDEPage() {
               onDeleteFile={(file) => setDialog({ type: 'delete', file })}
               onRenameFile={(file) => setDialog({ type: 'rename', file })}
             />
+          </div>
+        )}
+        {sidePanel === 'git' && (
+          <div className="flex-shrink-0 overflow-hidden" style={{ width: 280, borderRight: '1px solid #252526' }}>
+            <GitPanel projectId={projectId!} projectName={project.name} />
           </div>
         )}
 

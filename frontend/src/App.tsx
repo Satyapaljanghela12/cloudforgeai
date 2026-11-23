@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import IDEPage from './pages/IDEPage';
+import DeploymentPage from './pages/DeploymentPage';
+import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 /**
@@ -30,6 +32,8 @@ function AppRoutes() {
       {/* Protected */}
       <Route path="/dashboard" element={<AuthGuard><DashboardPage /></AuthGuard>} />
       <Route path="/projects/:id" element={<AuthGuard><IDEPage /></AuthGuard>} />
+      <Route path="/deployments/:id" element={<AuthGuard><DeploymentPage /></AuthGuard>} />
+      <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
 
       {/* 404 */}
       <Route path="*" element={<NotFoundPage />} />

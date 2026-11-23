@@ -45,8 +45,8 @@ import { logger } from '../utils/logger';
  * container), you'd use exec.start({ hijack: true, stdin: true }).
  */
 
-const EXECUTION_TIMEOUT_MS = 30_000; // 30 seconds hard kill
-const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024; // 128 MB
+const EXECUTION_TIMEOUT_MS = 30_000;
+const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024;
 
 export interface ExecutionResult {
   exitCode: number;
@@ -54,13 +54,14 @@ export interface ExecutionResult {
 }
 
 export interface ExecutionHandles {
-  /** Write raw bytes to the container's stdin (keyboard input) */
   writeStdin: (data: string) => void;
-  /** Notify the container's PTY of a terminal resize */
   resize: (cols: number, rows: number) => void;
 }
 
-const docker = new Dockerode();
+// Mutable reference — replaced by checkDocker() with the working client
+let docker: Dockerode = process.platform === 'win32'
+  ? new Dockerode({ socketPath: '//./pipe/dockerDesktopLinuxEngine' })
+  : new Dockerode();
 
 async function writeFilesToTemp(
   files: Array<{ path: string; content: string; isDirectory: boolean }>
@@ -221,16 +222,27 @@ export function executeInDocker(
 }
 
 export async function checkDocker(): Promise<boolean> {
-  try {
-    await docker.ping();
-    logger.info('Docker daemon is reachable');
-    // Pre-pull shell images in the background so first shell open is fast
-    void pullImagesInBackground();
-    return true;
-  } catch {
-    logger.warn('Docker daemon is not reachable — code execution will be unavailable');
-    return false;
+  const pipes = process.platform === 'win32'
+    ? ['//./pipe/dockerDesktopLinuxEngine', '//./pipe/docker_engine', '//./pipe/dockerBackend']
+    : [null]; // null = use default (Unix socket)
+
+  for (const socketPath of pipes) {
+    try {
+      const client = socketPath
+        ? new Dockerode({ socketPath })
+        : new Dockerode();
+      await client.ping();
+      docker = client; // Replace with the working client
+      logger.info('Docker daemon is reachable', { socketPath: socketPath ?? 'default' });
+      void pullImagesInBackground();
+      return true;
+    } catch {
+      logger.debug?.('Docker pipe failed', { socketPath });
+    }
   }
+
+  logger.warn('Docker daemon is not reachable — code execution will be unavailable');
+  return false;
 }
 
 async function pullImagesInBackground(): Promise<void> {

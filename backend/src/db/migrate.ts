@@ -151,6 +151,89 @@ const migrations: Migration[] = [
         ON code_embeddings (project_id);
     `,
   },
+  {
+    id: '006_create_github_tables',
+    sql: `
+      -- Stores the GitHub OAuth token for a user.
+      -- One token per user — if they reconnect, it overwrites.
+      -- The access_token is stored as plain text here.
+      -- In production, encrypt it with AES before storing.
+      CREATE TABLE IF NOT EXISTS github_connections (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id      UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        github_id    TEXT NOT NULL,
+        github_login TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        avatar_url   TEXT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Links a CloudForge project to a GitHub repository.
+      -- Stores the repo URL and default branch for push/pull.
+      CREATE TABLE IF NOT EXISTS git_repositories (
+        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id     UUID NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+        github_repo    TEXT NOT NULL,
+        default_branch TEXT NOT NULL DEFAULT 'main',
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `,
+  },
+  {
+    id: '007_create_deployments',
+    sql: `
+      CREATE TABLE IF NOT EXISTS deployments (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id   UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        version      INTEGER NOT NULL DEFAULT 1,
+        status       TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','building','running','failed','stopped')),
+        url          TEXT,
+        container_id TEXT,
+        port         INTEGER,
+        error        TEXT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS deployments_project_id_idx ON deployments (project_id);
+      CREATE INDEX IF NOT EXISTS deployments_user_id_idx    ON deployments (user_id);
+
+      CREATE TABLE IF NOT EXISTS deployment_logs (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        deployment_id UUID NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+        message       TEXT NOT NULL,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS deployment_logs_deployment_id_idx
+        ON deployment_logs (deployment_id);
+    `,
+  },
+  {
+    id: '008_create_vm_connections',
+    sql: `
+      -- Stores the user's AWS VM (EC2) connection details.
+      -- One VM per user. The SSH private key is stored as text here;
+      -- in production it would be encrypted with AES-256 before storage.
+      CREATE TABLE IF NOT EXISTS vm_connections (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id      UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        host         TEXT NOT NULL,
+        port         INTEGER NOT NULL DEFAULT 22,
+        username     TEXT NOT NULL DEFAULT 'ec2-user',
+        private_key  TEXT NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending','connected','failed')),
+        last_checked TIMESTAMPTZ,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `,
+  },
 ];
 
 // ── Migration runner ──────────────────────────────────────────────────────────

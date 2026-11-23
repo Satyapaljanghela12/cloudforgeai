@@ -5,36 +5,43 @@ import os from 'os';
 import fs from 'fs/promises';
 import { logger } from '../utils/logger';
 
-/**
- * Shell service — runs a persistent interactive shell inside Docker.
- *
- * Unlike executeInDocker (which runs a single command and exits),
- * this starts /bin/sh and keeps it alive so the user can type any
- * command: ls, npm install, git status, python main.py, etc.
- *
- * Key differences from the run executor:
- * - No timeout (shells are long-lived)
- * - Network enabled (npm install, pip install need internet)
- * - Writable filesystem (package installs need to write to node_modules)
- * - Files mounted read-write so changes persist during the session
- * - Starts /bin/sh not a language-specific command
- *
- * Security:
- * - Memory and CPU limits still apply
- * - Container is still isolated from the host
- * - Container is destroyed when the WebSocket closes
- * - Each user gets their own container (no sharing)
- *
- * Image selection:
- * We pick the image based on project language so the right runtime
- * is available in the shell (node, python, etc.)
- */
+const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
 
-const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256MB — more than run, for installs
+const WINDOWS_PIPES = [
+  '//./pipe/dockerDesktopLinuxEngine',
+  '//./pipe/docker_engine',
+  '//./pipe/dockerBackend',
+];
 
-const docker = new Dockerode();
+function createDockerClient(): Dockerode {
+  if (process.platform !== 'win32') return new Dockerode();
+  return new Dockerode({ socketPath: WINDOWS_PIPES[0] });
+}
 
-// Map project language to Docker image for the shell
+let docker = createDockerClient();
+let dockerConnected = false;
+
+async function ensureDockerConnected(): Promise<void> {
+  if (dockerConnected) return;
+  if (process.platform !== 'win32') {
+    await docker.ping();
+    dockerConnected = true;
+    return;
+  }
+  for (const socketPath of WINDOWS_PIPES) {
+    try {
+      const client = new Dockerode({ socketPath });
+      await client.ping();
+      docker = client;
+      dockerConnected = true;
+      return;
+    } catch { /* try next */ }
+  }
+  throw new Error('Docker daemon not reachable. Is Docker Desktop running?');
+}
+
+// Use alpine — small, fast, reliable stream handling
+// git is installed via apk inside the shell on first connect (~2s)
 const SHELL_IMAGES: Record<string, string> = {
   javascript: 'node:22-alpine',
   typescript: 'node:22-alpine',
@@ -53,11 +60,10 @@ async function writeFilesToTemp(
 ): Promise<string> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cloudforge-shell-'));
   for (const file of files) {
+    if (file.isDirectory) continue;
     const fullPath = path.join(tmpDir, file.path);
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
-    if (!file.isDirectory) {
-      await fs.writeFile(fullPath, file.content, 'utf8');
-    }
+    await fs.writeFile(fullPath, file.content, 'utf8');
   }
   return tmpDir;
 }
@@ -91,15 +97,15 @@ export function startShell(
     },
   };
 
-  // Start the shell asynchronously
   (async () => {
     try {
+      await ensureDockerConnected();
       tmpDir = await writeFilesToTemp(files);
 
       container = await docker.createContainer({
         Image: image,
-        // /bin/sh -i = interactive shell; Alpine uses ash which is sh-compatible
-        Cmd: ['/bin/sh'],
+        // Install git+curl via apk, show progress, then start the shell
+        Cmd: ['/bin/sh', '-c', 'apk add --no-cache git curl 2>&1 && exec /bin/sh'],
         WorkingDir: '/app',
         Tty: true,
         OpenStdin: true,
@@ -109,23 +115,23 @@ export function startShell(
         AttachStderr: true,
         Env: [
           'TERM=xterm-256color',
-          // Raw ANSI escapes — works in ash, bash, sh
-          'PS1=\x1b[1;32mcloudforge\x1b[0m:\x1b[1;34m\\w\x1b[0m$ ',
+          'PS1=%F{green}cloudforge%f:%F{blue}%~%f$ ',
         ],
         HostConfig: {
-          // Read-write mount — npm install etc. need to write files
           Binds: [`${tmpDir}:/app`],
           Memory: MEMORY_LIMIT_BYTES,
           MemorySwap: MEMORY_LIMIT_BYTES,
           CpuPeriod: 100000,
           CpuQuota: 50000,
-          // Network enabled for package managers
           NetworkMode: 'bridge',
           SecurityOpt: ['no-new-privileges'],
           AutoRemove: false,
         },
       });
 
+      // ── Attach BEFORE start — required for Tty:true containers ──────────
+      // The attach call opens the stream. start() then begins execution.
+      // Reversed order causes the JSON options leak we saw previously.
       const attachStream = await container.attach({
         stream: true,
         stdin: true,
@@ -134,29 +140,30 @@ export function startShell(
         hijack: true,
       });
 
+      // With Tty:true the stream is a raw duplex (not multiplexed)
       stdinStream = attachStream as unknown as Writable;
 
-      // Flush buffered keystrokes that arrived before attach
+      // Flush any keystrokes that arrived before attach was ready
       for (const buffered of stdinBuffer) {
         stdinStream.write(buffered);
       }
       stdinBuffer.length = 0;
 
-      const outputStream = new PassThrough();
-      outputStream.on('data', (chunk: Buffer) => {
-        onOutput(chunk.toString('utf8'));
-      });
-      (attachStream as unknown as NodeJS.ReadableStream).pipe(outputStream);
+      // Pipe output to xterm
+      const output = new PassThrough();
+      output.on('data', (chunk: Buffer) => onOutput(chunk.toString('utf8')));
+      (attachStream as unknown as NodeJS.ReadableStream).pipe(output);
 
+      // Start the container after attaching
       await container.start();
-      logger.info('Shell container started', { image, tmpDir });
+      logger.info('Shell container started', { image });
 
       const { StatusCode: exitCode } = await container.wait();
       logger.info('Shell container exited', { exitCode });
       onExit();
 
     } catch (err) {
-      logger.error('Shell container error', { message: (err as Error).message });
+      logger.error('Shell error', { message: (err as Error).message });
       onOutput(`\r\n\x1b[31m[CloudForge] Shell error: ${(err as Error).message}\x1b[0m\r\n`);
       onExit();
     } finally {

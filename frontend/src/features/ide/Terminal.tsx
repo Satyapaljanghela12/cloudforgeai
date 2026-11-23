@@ -127,10 +127,10 @@ export default function Terminal({ onReady, onData, onResize }: Props) {
       onResizeRef.current?.(cols, rows);
     });
 
-    // Welcome message
+    // Welcome message — only shown before shell connects
     term.writeln('\x1b[90m╔═══════════════════════════════════╗\x1b[0m');
     term.writeln('\x1b[90m║  CloudForge AI — Terminal         ║\x1b[0m');
-    term.writeln('\x1b[90m║  Type any command to get started  ║\x1b[0m');
+    term.writeln('\x1b[90m║  Connecting to shell...           ║\x1b[0m');
     term.writeln('\x1b[90m╚═══════════════════════════════════╝\x1b[0m');
     term.writeln('');
 
@@ -140,8 +140,6 @@ export default function Terminal({ onReady, onData, onResize }: Props) {
       writeln: (data) => term.writeln(data),
       clear: () => {
         term.clear();
-        term.writeln('\x1b[90m CloudForge AI — Terminal\x1b[0m');
-        term.writeln('');
       },
       focus: () => term.focus(),
       getDimensions: () => ({

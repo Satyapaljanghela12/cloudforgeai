@@ -10,6 +10,9 @@ import projectsRouter from './routes/projects';
 import { projectFileRouter, fileRouter } from './routes/files';
 import executionRouter from './routes/execution';
 import aiRouter from './routes/ai';
+import githubRouter, { projectGithubRouter } from './routes/github';
+import deploymentRouter, { projectDeploymentRouter } from './routes/deployments';
+import vmRouter, { deploymentActionsRouter, projectDeployRouter } from './routes/vm';
 
 export function createApp(): Application {
   const app = express();
@@ -42,6 +45,13 @@ export function createApp(): Application {
   app.use('/api/files', fileRouter);
   app.use('/api/execution', executionRouter);
   app.use('/api/projects/:id/ai', aiRouter);
+  app.use('/api/github', githubRouter);
+  app.use('/api/projects/:id/github', projectGithubRouter);
+  app.use('/api/projects/:id/deployments', projectDeploymentRouter);
+  app.use('/api/projects/:id/deploy', projectDeployRouter);
+  app.use('/api/deployments', deploymentRouter);
+  app.use('/api/deployments', deploymentActionsRouter);
+  app.use('/api/vm', vmRouter);
 
   // ── Error handler — must be last ───────────────────────────────────────────
 

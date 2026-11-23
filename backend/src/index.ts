@@ -7,40 +7,48 @@ import { runMigrations } from './db/migrate';
 import { createExecutionWebSocketServer } from './websocket/executionSocket';
 import { createShellWebSocketServer } from './websocket/shellSocket';
 import { checkDocker } from './execution/dockerService';
+import { initDeploymentDocker } from './deployment/deploymentService';
 
-/**
- * Server entry point.
- *
- * Startup sequence:
- * 1. Verify database connection
- * 2. Run migrations
- * 3. Check Docker availability (non-fatal — app runs without it)
- * 4. Create HTTP server from Express app
- * 5. Attach WebSocket server to the same HTTP server
- * 6. Start listening
- *
- * Why attach WebSocket to the same server?
- * Both HTTP and WebSocket can share port 3001. The WebSocket upgrade
- * request arrives as a normal HTTP request with an "Upgrade" header.
- * Express ignores it (it's not a route match), and the ws library
- * intercepts it. No extra port needed.
- */
 async function main(): Promise<void> {
   await connectDatabase();
   await runMigrations();
-
-  // Docker check is non-fatal — the IDE still works without execution
   await checkDocker();
+  await initDeploymentDocker();
 
   const app = createApp();
-
-  // Create a plain Node HTTP server wrapping Express.
-  // This lets us attach the WebSocket server to the same port.
   const httpServer = http.createServer(app);
 
-  // Attach WebSocket servers — both share port 3001
-  createExecutionWebSocketServer(httpServer);
-  createShellWebSocketServer(httpServer);
+  // Create WebSocket servers — they register on the httpServer's 'upgrade' event
+  const execWss = createExecutionWebSocketServer(httpServer);
+  const shellWss = createShellWebSocketServer(httpServer);
+
+  /**
+   * Why explicitly handle 'upgrade'?
+   * Express 5 intercepts ALL incoming HTTP requests including WebSocket
+   * upgrade requests and returns 400 before the ws library can process them.
+   *
+   * By listening to the raw 'upgrade' event on the Node HTTP server,
+   * we route WebSocket upgrades directly to the correct WebSocketServer
+   * before Express ever sees them.
+   */
+  httpServer.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url ?? '/', `http://localhost:${config.port}`);
+
+    logger.info('WebSocket upgrade request', { path: pathname });
+
+    if (pathname === '/ws/execution') {
+      execWss.handleUpgrade(request, socket, head, (ws) => {
+        execWss.emit('connection', ws, request);
+      });
+    } else if (pathname === '/ws/shell') {
+      shellWss.handleUpgrade(request, socket, head, (ws) => {
+        shellWss.emit('connection', ws, request);
+      });
+    } else {
+      logger.warn('Unknown WebSocket path, destroying socket', { path: pathname });
+      socket.destroy();
+    }
+  });
 
   httpServer.listen(config.port, () => {
     logger.info('CloudForge AI backend started', {
@@ -48,8 +56,6 @@ async function main(): Promise<void> {
       environment: config.nodeEnv,
     });
   });
-
-  // ── Graceful shutdown ───────────────────────────────────────────────────────
 
   function shutdown(signal: string): void {
     logger.info(`Received ${signal}. Starting graceful shutdown...`);

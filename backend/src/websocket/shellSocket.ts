@@ -57,10 +57,9 @@ function send(ws: WebSocket, payload: object) {
 }
 
 export function createShellWebSocketServer(httpServer: Server): WebSocketServer {
-  const wss = new WebSocketServer({
-    server: httpServer,
-    path: '/ws/shell',
-  });
+  // noServer:true — we handle upgrades manually in index.ts
+  // This prevents Express from intercepting WebSocket upgrade requests
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws: WebSocket) => {
     logger.info('Shell WebSocket client connected');

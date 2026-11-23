@@ -23,7 +23,9 @@ export type ShellStatus = 'disconnected' | 'connecting' | 'ready' | 'exited' | '
 type OutputHandler = (data: string) => void;
 type StatusHandler = (status: ShellStatus) => void;
 
-const SHELL_WS_URL = `ws://${window.location.hostname}:3001/ws/shell`;
+// Route through Vite dev server proxy (ws://localhost:5173/ws/shell → ws://localhost:3001/ws/shell)
+// Same-origin WebSocket avoids all browser cross-origin and IPv6 issues on Windows
+const SHELL_WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/shell`;
 
 export class ShellClient {
   private ws: WebSocket | null = null;
