@@ -63,6 +63,7 @@ export default function DashboardPage() {
       case 'typescript': return 'bg-blue-900 text-blue-300';
       case 'python': return 'bg-green-900 text-green-300';
       case 'html': return 'bg-orange-900 text-orange-300';
+      case 'react': return 'bg-cyan-900 text-cyan-300';
       default: return 'bg-gray-800 text-gray-300';
     }
   }

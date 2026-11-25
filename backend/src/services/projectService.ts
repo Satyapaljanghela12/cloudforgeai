@@ -18,6 +18,7 @@ export const SUPPORTED_LANGUAGES = [
   'typescript',
   'python',
   'html',
+  'react',
 ] as const;
 
 export type Language = (typeof SUPPORTED_LANGUAGES)[number];

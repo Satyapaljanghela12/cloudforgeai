@@ -46,11 +46,14 @@ import { logger } from '../utils/logger';
  */
 
 const EXECUTION_TIMEOUT_MS = 30_000;
+const EXECUTION_TIMEOUT_WITH_DEPS_MS = 10 * 60_000; // 10 min for npm install + dev server
 const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024;
+const MEMORY_LIMIT_WITH_DEPS_BYTES = 512 * 1024 * 1024; // 512MB for npm install + React/Node servers
 
 export interface ExecutionResult {
   exitCode: number;
   timedOut: boolean;
+  previewPort?: number; // set if the container exposes a port
 }
 
 export interface ExecutionHandles {
@@ -83,6 +86,29 @@ async function writeFilesToTemp(
  * Returns both a Promise (resolves when execution finishes) and
  * ExecutionHandles (for stdin writes and resize events).
  */
+/**
+ * Returns true if the project has a package.json — meaning it needs
+ * npm install before it can run. React, Next.js, Express apps all need this.
+ */
+function hasPackageJson(files: Array<{ path: string; isDirectory: boolean }>): boolean {
+  return files.some(f => !f.isDirectory && f.path === 'package.json');
+}
+
+/**
+ * Build the actual run command for the container.
+ * If a package.json is present, prepend `npm install` so dependencies
+ * are installed before the entry command runs.
+ */
+function buildRunCommand(runtime: Runtime, files: Array<{ path: string; isDirectory: boolean }>): string[] {
+  if (hasPackageJson(files) && runtime.language !== 'react') {
+    // For plain JS/TS with package.json: install deps first, then run
+    const entryCmd = runtime.runCommand.join(' ');
+    return ['sh', '-c', `npm install --silent 2>&1 && ${entryCmd}`];
+  }
+  // React runtime already has npm install baked into its runCommand
+  return runtime.runCommand;
+}
+
 export function executeInDocker(
   files: Array<{ path: string; content: string; isDirectory: boolean }>,
   runtime: Runtime,
@@ -120,10 +146,19 @@ export function executeInDocker(
       tmpDir = await writeFilesToTemp(files);
       logger.info('Wrote project files', { tmpDir, fileCount: files.length });
 
+      // ── Determine run command and network requirements ───────────────────
+      const needsNetwork = hasPackageJson(files) || runtime.language === 'react';
+      const runCmd = buildRunCommand(runtime, files);
+
+      // Pick a host port in preview range (5000–5999) for server projects
+      const previewPort = needsNetwork
+        ? 5000 + Math.floor(Math.random() * 999)
+        : null;
+
       // ── Create container with PTY ────────────────────────────────────────
       container = await docker.createContainer({
         Image: runtime.dockerImage,
-        Cmd: runtime.runCommand,
+        Cmd: runCmd,
         WorkingDir: '/app',
         // Tty: true allocates a pseudo-terminal inside the container.
         // OpenStdin: true keeps stdin open so we can write to it.
@@ -134,15 +169,21 @@ export function executeInDocker(
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
+        ExposedPorts: needsNetwork ? { '3000/tcp': {} } : undefined,
         HostConfig: {
-          Binds: [`${tmpDir}:/app:ro`],
-          Memory: MEMORY_LIMIT_BYTES,
-          MemorySwap: MEMORY_LIMIT_BYTES,
+          // Writable mount (no :ro) so npm install can write node_modules
+          Binds: [`${tmpDir}:/app`],
+          Memory: needsNetwork ? MEMORY_LIMIT_WITH_DEPS_BYTES : MEMORY_LIMIT_BYTES,
+          MemorySwap: needsNetwork ? MEMORY_LIMIT_WITH_DEPS_BYTES : MEMORY_LIMIT_BYTES,
           CpuPeriod: 100000,
           CpuQuota: 50000,
-          NetworkMode: 'none',
+          // Projects with package.json need internet to download npm packages
+          NetworkMode: needsNetwork ? 'bridge' : 'none',
           SecurityOpt: ['no-new-privileges'],
           AutoRemove: false,
+          PortBindings: previewPort
+            ? { '3000/tcp': [{ HostPort: String(previewPort) }] }
+            : undefined,
         },
       });
 
@@ -171,19 +212,35 @@ export function executeInDocker(
       // Pipe container output to our onOutput callback
       // With Tty:true, it's a single raw stream — no demuxing needed
       const outputPassthrough = new PassThrough();
+      let previewUrlShown = false;
       outputPassthrough.on('data', (chunk: Buffer) => {
-        onOutput(chunk.toString('utf8'));
+        const text = chunk.toString('utf8');
+        onOutput(text);
+        // Show the preview URL once the dev server signals it's ready.
+        // CRA prints "Local:   http://localhost:3000"
+        // Vite prints "Local:   http://localhost:3000/"
+        // Both print "localhost" once listening — use that as the signal.
+        if (previewPort && !previewUrlShown && (
+          text.includes('Local:') ||
+          text.includes('localhost:3000') ||
+          text.includes('ready in') ||         // Vite: "ready in 500ms"
+          text.includes('Compiled successfully') // CRA success message
+        )) {
+          previewUrlShown = true;
+          onOutput(`\r\n\x1b[36m[CloudForge] Preview: \x1b[1mhttp://localhost:${previewPort}\x1b[0m\r\n`);
+        }
       });
 
       // The attach stream is a duplex — pipe its readable side to output
       (attachStream as unknown as NodeJS.ReadableStream).pipe(outputPassthrough);
 
       // ── Timeout ──────────────────────────────────────────────────────────
+      const timeoutMs = needsNetwork ? EXECUTION_TIMEOUT_WITH_DEPS_MS : EXECUTION_TIMEOUT_MS;
       const timeoutId = setTimeout(async () => {
         timedOut = true;
-        onOutput('\r\n\x1b[33m[CloudForge] Execution timed out after 30 seconds\x1b[0m\r\n');
+        onOutput(`\r\n\x1b[33m[CloudForge] Execution timed out after ${timeoutMs / 1000}s\x1b[0m\r\n`);
         try { await container!.kill(); } catch { /* already gone */ }
-      }, EXECUTION_TIMEOUT_MS);
+      }, timeoutMs);
 
       // ── Abort (Stop button) ──────────────────────────────────────────────
       signal.addEventListener('abort', async () => {

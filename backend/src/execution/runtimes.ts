@@ -59,6 +59,22 @@ export const RUNTIMES: Record<string, Runtime> = {
     fileExtension: '.html',
     entryFile: 'index.html',
   },
+  react: {
+    language: 'react',
+    dockerImage: 'node:22-alpine',
+    // npm install first, then start the dev server.
+    // Handles both Vite (npm run dev) and Create React App (npm start).
+    // We check package.json scripts to pick the right command.
+    // CI=false stops CRA from treating warnings as errors.
+    runCommand: ['sh', '-c',
+      'npm install 2>&1 && ' +
+      '(node -e "const s=require(\'./package.json\').scripts||{}; process.exit(s.dev?0:1);" 2>/dev/null ' +
+      '&& npm run dev -- --host 0.0.0.0 --port 3000 2>&1 ' +
+      '|| CI=false npm start 2>&1)'
+    ],
+    fileExtension: '.tsx',
+    entryFile: 'src/main.tsx',
+  },
 };
 
 export function getRuntime(language: string): Runtime | null {

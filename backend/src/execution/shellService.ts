@@ -118,7 +118,7 @@ export function startShell(
           'PS1=%F{green}cloudforge%f:%F{blue}%~%f$ ',
         ],
         HostConfig: {
-          Binds: [`${tmpDir}:/app`],
+          Binds: [`${tmpDir}:/app`],  // writable so npm install can create node_modules
           Memory: MEMORY_LIMIT_BYTES,
           MemorySwap: MEMORY_LIMIT_BYTES,
           CpuPeriod: 100000,

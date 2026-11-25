@@ -36,6 +36,7 @@ export const SUPPORTED_LANGUAGES = [
   { value: 'typescript', label: 'TypeScript' },
   { value: 'python', label: 'Python' },
   { value: 'html', label: 'HTML' },
+  { value: 'react', label: 'React' },
 ] as const;
 
 export type Language = (typeof SUPPORTED_LANGUAGES)[number]['value'];
